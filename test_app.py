@@ -1,10 +1,11 @@
+from bson import ObjectId
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
-app = Flask(__name__)
 import requests
 from bs4 import BeautifulSoup
 
 import certifi
 ca = certifi.where()
+from bson.json_util import dumps
 
 import jwt
 import datetime
@@ -23,19 +24,6 @@ app.config['UPLOAD_FOLDER'] = "./static/profile_pics"
 
 SECRET_KEY = 'SPARTA'
 
-#토큰 받아오기
-# @app.route('/')
-# def home():
-#     token_receive = request.cookies.get('mytoken')
-#     try:
-#         payload = jwt.decode(token_receive, SECRET_KEY, algorithms=['HS256'])
-#         user_info = db.users.find_one({"username": payload["id"]})
-#         return render_template('index.html', user_info=user_info)
-#
-#     except jwt.ExpiredSignatureError:
-#         return redirect(url_for("login", msg="로그인 시간이 만료되었습니다."))
-#     except jwt.exceptions.DecodeError:
-#         return redirect(url_for("login", msg="로그인 정보가 존재하지 않습니다."))
 
 # 로그인시 로그인 페이지로 넘어감
 @app.route('/login')
@@ -114,23 +102,18 @@ def main():
             location = tr.select_one('a > div > div.name > p:nth-child(3)').text.strip()
             hotel_img = tr.select_one('a > p > img')['data-original'].lstrip('/')
             detail_url = tr.select_one('a')['href']
-            # owner_comment = tr.select_one('#content > div.top > div.right > div.comment > div').text
 
             hotel = {
-                'id': '',
-                'pw': '',
-                'name': '',
-                'hotel_imgs': hotel_img,
+                'hotel_img': hotel_img,
                 'hotel_name': hotel_name,
                 'location': location,
                 'detail_url': detail_url,
-                'like': 0,
-                'comments': '',
-                'owner_comment': ''
+                'owner_comment': '',
+                'comments': []
             }
             # db.hotels.insert_one(hotel)
         hotels = list(db.hotels.find({}, {'_id': False}))
-        return render_template('index.html', user_info=user_info, hotels=hotels)
+        return render_template('index.html', user_info=user_info, hotels=hotels )
 
     except jwt.ExpiredSignatureError:
         return redirect(url_for("login", msg="로그인 시간이 만료되었습니다."))
@@ -148,8 +131,8 @@ def detail():
     payload = jwt.decode(token_receive, SECRET_KEY, algorithms=['HS256'])
     user_info = db.users.find_one({"username": payload["id"]})
 
+    #클릭한 호텔명과 같은 url에서 사장님 코멘트 크롤링
     detail_url = db.hotels.find_one({'hotel_name':hotel_name})['detail_url']
-
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36'}
     data = requests.get(detail_url, headers=headers)
@@ -157,44 +140,78 @@ def detail():
     get_owner_comment = soup.select_one('#content > div.top > div.right > div.comment > div').text
     find_owner_comment = db.hotels.find_one({'detail_url': detail_url})['owner_comment']
 
-    hotel_img = db.hotels.find_one({'detail_url': detail_url})['hotel_img']
-    hotel_name = db.hotels.find_one({'detail_url': detail_url})['hotel_name']
-    location = db.hotels.find_one({'detail_url': detail_url})['location']
-    like = db.hotels.find_one({'detail_url': detail_url})['like']
-
+    #db의 사장님 코멘트가 비어 있으면 저장한 후에 코멘트 불러온다.
     if find_owner_comment == '':
         db.hotels.update_one({'detail_url': detail_url}, {'$set': {'owner_comment': get_owner_comment}})
-        owner_comment = db.hotels.find_one({'detail_url': detail_url})['owner_comment']
+        hotel_info = db.hotels.find_one({'detail_url': detail_url})
+    #아니면 코멘트만 불러온다
     else:
-        owner_comment = db.hotels.find_one({'detail_url': detail_url})['owner_comment']
-    return render_template('detail.html', user_info=user_info, owner_comment=owner_comment, hotel_img=hotel_img, hotel_name=hotel_name, location=location, like=like)
+        hotel_info = db.hotels.find_one({'detail_url': detail_url})
+    return render_template('detail.html', user_info=user_info, hotel_info=hotel_info)
 
 
-# # 좋아요 업데이트
-# @app.route('/update_like', methods=['POST'])
-# def update_like():
-#     token_recieve = request.cookies.get('mytoken')
-#     try:
-#         payload = jwt.decode(token_recieve, SECRET_KEY, algorithms=['HS256'])
-#
-#         user_info = db.users.find_one({"username": payload["id"]})
-#         post_id_receive = request.form["post_id_give"]
-#         type_receive = request.form["type_give"]
-#         action_receive = request.form["action_give"]
-#         doc = {
-#             "post_id": post_id_receive,
-#             "username": user_info["username"],
-#             "type": type_receive
-#         }
-#         if action_receive == "like":
-#             db.likes.insert_one(doc)
-#         else:
-#             db.likes.delete_one(doc)
-#         count = db.likes.count_documents({"post_id": post_id_receive, "type": type_receive})
-#         return jsonify({"result": "success", 'msg': 'updated', "count": count})
-#
-#     except (jwt.ExpiredSignatureError, jwt.exceptions.DecodeError):
-#         return redirect(url_for("home"))
+@app.route('/posting', methods=['POST'])
+def posting():
+    token_receive = request.cookies.get('mytoken')
+    hotel_name = request.form['hotel_name']
+    try:
+        payload = jwt.decode(token_receive, SECRET_KEY, algorithms=['HS256'])
+        user_info = db.users.find_one({"username": payload["id"]})
+        comment_receive = request.form["comment_give"]
+        date_receive = request.form["date_give"]
+
+        #hotels db comments 필드에 댓글 관련 데이터 삽입
+        db.hotels.update_one({'hotel_name':hotel_name}, {'$push': {'comments':{
+            '_id': ObjectId(),
+            'username':user_info['profile_name'],
+            'comment':comment_receive,
+            'date':date_receive
+        }}})
+
+        return jsonify({"result": "success", 'msg': '업로드 성공'})
+    except (jwt.ExpiredSignatureError, jwt.exceptions.DecodeError):
+        return redirect(url_for("main"))
+
+
+@app.route("/get_posts", methods=['GET'])
+def get_posts():
+    token_receive = request.cookies.get('mytoken')
+    hotel_name = request.args.get('hotel_name')
+    try:
+        payload = jwt.decode(token_receive, SECRET_KEY, algorithms=['HS256'])
+        # comments 필드만 찾아서 넘겨준다.
+        posts = db.hotels.find_one({'hotel_name': hotel_name})["comments"]
+        #print(posts)
+
+        return jsonify({'posts': dumps(posts)})
+    except (jwt.ExpiredSignatureError, jwt.exceptions.DecodeError):
+        return redirect(url_for("main"))
+
+
+@app.route('/update_like', methods=['POST'])
+def update_like():
+    token_receive = request.cookies.get('mytoken')
+    try:
+        payload = jwt.decode(token_receive, SECRET_KEY, algorithms=['HS256'])
+        user_info = db.users.find_one({"username": payload["id"]})
+        post_id_receive = request.form["post_id_give"]
+        type_receive = request.form["type_give"]
+        action_receive = request.form["action_give"]
+
+        doc = {
+            "post_id": post_id_receive,
+            "username": user_info["username"],
+            "type": type_receive
+        }
+        if action_receive == "like":
+            db.likes.insert_one(doc)
+        else:
+            db.likes.delete_one(doc)
+        count = db.likes.count_documents({"post_id": post_id_receive, "type": type_receive})
+        return jsonify({"result": "success", 'msg': 'updated', "count": count})
+    except (jwt.ExpiredSignatureError, jwt.exceptions.DecodeError):
+        return redirect(url_for("main"))
+
 
 @app.route('/user/<username>')
 def user(username):
@@ -227,14 +244,15 @@ def save_img():
             filename = secure_filename(file.filename)
             extension = filename.split(".")[-1]
             file_path = f"/{username}.{extension}"
-            #file.save("./" + file_path) 이나 static 경로를 적어준다.
-            file.save("C://Users/yewony/Desktop/sparta/projects/chapter1_hotel/static/" + file_path)
+            file.save("./static/" + file_path)
             new_doc["profile_pic"] = filename
             new_doc["profile_pic_real"] = file_path
         db.users.update_one({'username': payload['id']}, {'$set': new_doc})
         return jsonify({"result": "success", 'msg': '프로필을 업데이트했습니다.'})
     except (jwt.ExpiredSignatureError, jwt.exceptions.DecodeError):
         return redirect(url_for("main"))
+
+
 
 
 if __name__ == '__main__':

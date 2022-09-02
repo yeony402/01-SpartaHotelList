@@ -1,5 +1,4 @@
 # project01-SpartaHotelList
-* stay-G의 회원이 되어 가고 싶은 호텔의 다양한 리뷰를 살펴보세요! 강원도  호텔에 대한 자유로운 후기와 좋아요 를 남길 수 있는 플랫폼입니다.
 * flask/js/ajax/mongoDB 로 구현한 팀프로젝트
 
 1. 회원가입과 로그인 기능 구현

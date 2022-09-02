@@ -1,5 +1,5 @@
 # project01-SpartaHotelList
-* flask/js/ajax/mongoDB 로 구현한 팀프로젝트
+* **flask / js / ajax / mongoDB** 로 구현한 팀프로젝트
 
 1. 회원가입과 로그인 기능 구현
 2. 여기어때에서 크롤링한 호텔정보 목록 메인페이지에 나타내기

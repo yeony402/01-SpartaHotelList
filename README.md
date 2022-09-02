@@ -8,5 +8,8 @@
 
 ![image](https://user-images.githubusercontent.com/44489399/188081791-fb494c6c-6553-41ee-a305-6c8dd18b5510.png)
 
+![image](https://user-images.githubusercontent.com/44489399/188082071-9f5ea311-32df-4175-9195-a422113702a0.png)
+
+
 - 게시글과 댓글 컬렉션이 매칭되지 않아 모든 게시글에 같은 댓글이 보이는 현상   
 ->  게시글 컬렉션에 subdocument를 만들어서 해결
